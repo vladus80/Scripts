@@ -5,7 +5,7 @@ DEBUG=1
 SCRIPT_URL="https://raw.githubusercontent.com/vladus80/Scripts/main/testscript.sh"
 
 debug() {
-  [ "$DEBUG" = "0" ] && echo "$@"
+  [ "$DEBUG" = "1" ] && echo "$@" >&2
 }
 
 if command -v curl >/dev/null 2>&1; then
