@@ -6,8 +6,8 @@ SCRIPT_URL="https://raw.githubusercontent.com/vladus80/Scripts/main/testscript.s
 # Попытаться использовать curl, wget или sh + /dev/tcp
 if command -v curl >/dev/null 2>&1; then
   curl -fsSL "$SCRIPT_URL"
-elif command -v wget >/dev/null 2>&1; then
-  wget -O- "$SCRIPT_URL"
+#elif command -v wget >/dev/null 2>&1; then
+  #wget -O- "$SCRIPT_URL"
 elif command -v fetch >/dev/null 2>&1; then
   fetch -o - "$SCRIPT_URL"
 elif command -v python3 >/dev/null 2>&1; then
