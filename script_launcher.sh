@@ -11,7 +11,7 @@ if command -v curl >/dev/null 2>&1; then
 #elif command -v fetch >/dev/null 2>&1; then
   #fetch -o - "$SCRIPT_URL"
 elif command -v python3 >/dev/null 2>&1; then
-  echo "Запускаем с помощью python"
+  echo "Запускаем с помощью python" >&2
   python3 -c "import sys, urllib.request; print(urllib.request.urlopen(sys.argv[1]).read().decode(), end='')" "$SCRIPT_URL"
 else
   echo "Ошибка: не найдено ни curl, ни wget, ни fetch, ни python3." >&2
