@@ -12,7 +12,7 @@ if command -v curl >/dev/null 2>&1; then
   debug "!Запускаем с помощью curl"
   curl -fsSL "$SCRIPT_URL"
 elif command -v wget >/dev/null 2>&1; then
-  debug "Запускаем с помощью wget"
+  debug "!Запускаем с помощью wget"
   wget -O- "$SCRIPT_URL"
 elif command -v fetch >/dev/null 2>&1; then
   debug "Запускаем с помощью fetch"
