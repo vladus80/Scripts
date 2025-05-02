@@ -9,7 +9,7 @@ debug() {
 }
 
 if command -v curl >/dev/null 2>&1; then
-  debug "Запускаем с помощью curl"
+  debug "!Запускаем с помощью curl"
   curl -fsSL "$SCRIPT_URL"
 elif command -v wget >/dev/null 2>&1; then
   debug "Запускаем с помощью wget"
