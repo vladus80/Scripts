@@ -1,66 +1,67 @@
 #!/bin/bash
 
-set -e  # Остановить при ошибке
-set -u  # Ошибка при использовании неопределённых переменных
-#set -o pipefail  # Учитывать ошибки в пайпах
+set -euo pipefail
+
+# === Проверка запуска от root ===
+if [ "$(id -u)" -ne 0 ]; then
+  echo "❌ Скрипт должен быть запущен от root."
+  exit 1
+fi
+
+# === Проверка наличия systemctl ===
+if ! command -v systemctl >/dev/null 2>&1; then
+  echo "❌ systemctl не найден. Поддерживается только systemd-системы."
+  exit 1
+fi
+
+# === Запрос RTSP-ссылки ===
+echo "🔗 Введите ссылку на RTSP-поток (например, rtsp://user:pass@192.168.0.33:554):"
+read -r RTSP_URL
+
+if [ -z "$RTSP_URL" ]; then
+  echo "❌ Ссылка не может быть пустой!"
+  exit 1
+fi
 
 # === Параметры ===
 APP_DIR="/opt/webrtc-streamer"
-CONFIG_JSON='{
-  "urls": {
-    "CamHome1": {
-      "video": "rtsp://admin:8521232vladus@192.168.0.33:554"
-    }
-  }
-}'
+TMPDIR=$(mktemp -d)
+ARCHIVE_URL="https://github.com/mpromonet/webrtc-streamer/releases/download/v0.8.11/webrtc-streamer-v0.8.11-Linux-x86_64-Release.tar.gz"
+ARCHIVE_NAME="${ARCHIVE_URL##*/}"
 
 # === 1. Обновление системы ===
 echo "=== 1. Обновление пакетов ==="
-apt update  -y
-
-# === 2. Установка зависимостей ===
-echo "=== 2. Установка зависимостей ==="
+apt update
 apt install -y wget curl ffmpeg v4l-utils git build-essential cmake libnsl2 libsm6 mc htop
 
-# === 3. Скачивание webrtc-streamer ===
-echo "=== 3. Скачивание webrtc-streamer ==="
-cd ~
-wget https://github.com/mpromonet/webrtc-streamer/releases/download/v0.8.11/webrtc-streamer-v0.8.11-Linux-x86_64-Release.tar.gz
+# === 2. Скачивание и распаковка ===
+echo "=== 2. Скачивание WebRTC Streamer ==="
+cd "$TMPDIR"
+wget "$ARCHIVE_URL"
+tar -xf "$ARCHIVE_NAME"
 
-# === 4. Распаковка архива ===
-echo "=== 4. Распаковка архива ==="
-tar -xvf webrtc-streamer-v0.8.11-Linux-x86_64-Release.tar.gz
-mv webrtc-streamer-v0.8.11-Linux-x86_64-Release webrtc-streamer
-
-# === 5. Копирование файлов в /opt ===
-echo "=== 5. Копирование файлов в $APP_DIR ==="
+# === 3. Установка в $APP_DIR ===
+echo "=== 3. Установка в $APP_DIR ==="
 mkdir -p "$APP_DIR"
-cp -r ~/webrtc-streamer/share/webrtc-streamer/* "$APP_DIR/"
-cp ~/webrtc-streamer/bin/webrtc-streamer "$APP_DIR/"
+cp -r webrtc-streamer*/share/webrtc-streamer/* "$APP_DIR/"
+cp webrtc-streamer*/bin/webrtc-streamer "$APP_DIR/"
+chmod +x "$APP_DIR/webrtc-streamer"
 
-# === 6. Создание config.json ===
-echo "=== 6. Создание config.json ==="
+# === 4. Создание config.json ===
+echo "=== 4. Создание конфигурации ==="
 cat > "$APP_DIR/config.json" <<EOF
 {
-    "urls": {
-        "CamHome1": {
-            "video": "rtsp://admin:8521232vladus@192.168.0.33:554"
-        }
+  "urls": {
+    "CamHome1": {
+      "video": "$RTSP_URL"
     }
+  }
 }
 EOF
 
-# === 7. Делаем бинарник исполняемым (на всякий случай) ===
-chmod +x "$APP_DIR/webrtc-streamer"
-
-# === 8. Запуск веб-сервера в фоне ===
-echo "=== 8. Запуск webrtc-streamer ==="
-"$APP_DIR/webrtc-streamer" -C "$APP_DIR/config.json" &
-
-# === 9. Создание systemd-юнита ===
-echo "=== 9. Создание systemd сервиса ==="
-
-cat <<EOF > /etc/systemd/system/webrtc-streamer.service
+# === 5. Создание systemd сервиса ===
+echo "=== 5. Создание systemd сервиса ==="
+cat > /etc/systemd/system/webrtc-streamer.service <<EOF
 [Unit]
 Description=WebRTC Streamer Service
 After=network.target
@@ -75,18 +76,21 @@ User=root
 WantedBy=multi-user.target
 EOF
 
-# === 10. Включение и запуск службы ===
-echo "=== 10. Включение автозапуска через systemd ==="
+# === 6. Запуск и включение сервиса ===
+echo "=== 6. Активация systemd-сервиса ==="
 systemctl daemon-reexec
 systemctl enable webrtc-streamer
 systemctl start webrtc-streamer
 
-# === 11. Проверка статуса ===
-echo "=== 11. Проверка статуса службы ==="
+# === 7. Очистка временных файлов ===
+rm -rf "$TMPDIR"
+
+# === 8. Проверка статуса ===
+echo "=== 7. Статус сервиса ==="
 systemctl status webrtc-streamer --no-pager
 
-# === Готово ===
+# === Завершение ===
 echo "✅ Установка завершена!"
 echo "Открой в браузере:"
-echo "http://<IP_LXC>:8000/webrtcstreamer.html?video=CamHome1"
-reboot
+echo "http://<IP-адрес>:8000/webrtcstreamer.html?video=CamHome1"
+echo "ℹ️ Замените <IP-адрес> на адрес сервера."
