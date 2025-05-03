@@ -21,7 +21,12 @@ set -euo pipefail
 #   RTSP_URL="rtsp://admin:pass@192.168.0.33:554" ./install_webrtc_streamer.sh
 #   ./install_webrtc_streamer.sh -url=rtsp://admin:pass@192.168.0.33:554
 #
-# 📄 После установки:
+# 📄 Скачать и установить:
+# wget https://github.com/vladus80/Scripts/edit/main/install_webrtc_streamer.sh
+# chmod +x install_webrtc_streamer.sh
+# ./install_webrtc_streamer.sh
+#------------------------------------------------------------------------------
+# Просмотр:
 #   http://<IP>:8000/webrtcstreamer.html?video=CamHome1
 ###############################################################################
 
