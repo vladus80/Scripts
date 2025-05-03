@@ -22,7 +22,7 @@ set -euo pipefail
 #   ./install_webrtc_streamer.sh -url=rtsp://admin:pass@192.168.0.33:554
 #
 # 📄 Скачать и установить:
-# wget https://github.com/vladus80/Scripts/edit/main/install_webrtc_streamer.sh
+# wget https://raw.githubusercontent.com/vladus80/Scripts/refs/heads/main/install_webrtc_streamer.sh
 # chmod +x install_webrtc_streamer.sh
 # ./install_webrtc_streamer.sh
 # ------------------------------------------------------------------------------
