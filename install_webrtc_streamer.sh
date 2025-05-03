@@ -33,8 +33,7 @@ ARCHIVE_NAME="${ARCHIVE_URL##*/}"
 # === 1. Обновление системы ===
 echo "=== 1. Обновление пакетов ==="
 apt update
-#apt install -y wget curl ffmpeg v4l-utils git build-essential cmake libnsl2 libsm6 mc htop
-apt install -y wget curl  git  libsm6 mc htop
+apt install -y wget curl ffmpeg v4l-utils git build-essential cmake libnsl2 libsm6 mc htop
 
 # === 2. Скачивание и распаковка ===
 echo "=== 2. Скачивание WebRTC Streamer ==="
