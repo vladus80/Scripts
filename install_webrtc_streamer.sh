@@ -25,7 +25,7 @@ set -euo pipefail
 # wget https://github.com/vladus80/Scripts/edit/main/install_webrtc_streamer.sh
 # chmod +x install_webrtc_streamer.sh
 # ./install_webrtc_streamer.sh
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # Просмотр:
 #   http://<IP>:8000/webrtcstreamer.html?video=CamHome1
 ###############################################################################
