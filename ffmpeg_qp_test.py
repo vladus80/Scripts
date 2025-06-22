@@ -11,17 +11,25 @@ FFmpeg QP Test Suite — CLI-утилита для тестирования ви
 - Выбор кодека (x264, x265, av1)
 - Аппаратное или программное кодирование
 - Пресеты кодирования
+- CRF (для программных кодеков)
+- Ограничение времени теста (duration)
 
 Пример использования:
     python ffmpeg_qp_test.py -i input.mp4 -tests '[{"qp":35,"scale":"1080p","fps":30,"hw":1,"codec":"x265"}]'
+    python ffmpeg_qp_test.py -i input.mp4 -tests '[{"crf":23,"scale":"1080p","codec":"x264"}]'
+    python ffmpeg_qp_test.py -i input.mp4 -tests '[{"crf":30,"preset":5,"codec":"av1"}]' -duration 10
 
 Поддерживаемые параметры тестов:
-    qp (int)     - уровень квантования (обязательный)
+    qp (int)     - уровень квантования (обязателен для HW, опционален для SW)
+    crf (int)    - constant rate factor (только для программных кодеков, опционален)
     scale (str)  - "1080p", "4k", "original" (по умолчанию)
     fps (int)    - желаемая частота кадров
     hw (0/1)     - 1 = аппаратное кодирование (vaapi), 0 = программное
     codec (str)  - "x264", "x265", "av1" (по умолчанию "x265")
-    preset (str) - "ultrafast", "fast", "medium", "slow" (по умолчанию "medium")
+    preset (str/int) -
+        - для x264/x265: "ultrafast", "fast", "medium", "slow" (по умолчанию "medium")
+        - для av1: число от 0 до 13 (по умолчанию 8)
+    duration (int) - ограничить время теста (секунды), например 10 — только первые 10 секунд файла
 
 Требования:
     - Python 3.10+
@@ -29,7 +37,7 @@ FFmpeg QP Test Suite — CLI-утилита для тестирования ви
     - Для аппаратного кодирования: Linux с поддержкой VAAPI
 
 Автор: vladus
-Версия: 1.0.0
+Версия: 1.1.0
 """
 
 import os
@@ -52,7 +60,9 @@ class TestConfig:
     fps: Optional[int] = None
     hw: int = 0
     codec: str = "x265"
-    preset: str = "medium"
+    preset: Any = "medium"  # Может быть str или int для av1
+    crf: Optional[int] = None  # Новый параметр
+    duration: Optional[int] = None  # Новый параметр
 
 @dataclass
 class TestResult:
@@ -85,25 +95,35 @@ class FFmpegQPTest:
 
     def _validate_config(self, config: Dict[str, Any]) -> TestConfig:
         """Валидирует конфигурацию теста"""
-        if "qp" not in config:
-            raise ValueError("QP является обязательным параметром")
-        
+        if "qp" not in config and "crf" not in config:
+            raise ValueError("QP или CRF является обязательным параметром")
         if config.get("hw", 0) == 1 and not self._check_hw_support():
             print("Предупреждение: Аппаратное ускорение недоступно, переключение на программное кодирование")
             config["hw"] = 0
-
-        # Устанавливаем preset 8 по умолчанию для AV1
-        preset = config.get("preset", "medium")
-        if config.get("codec", "x265") == "av1":
-            preset = "8"
-
+        codec = config.get("codec", "x265")
+        # Для av1 preset по умолчанию 8 (число), для остальных medium (строка)
+        if codec == "av1":
+            preset = config.get("preset", 8)
+            # preset должен быть числом от 0 до 13
+            try:
+                preset = int(preset)
+                if not (0 <= preset <= 13):
+                    raise ValueError
+            except Exception:
+                raise ValueError("Для av1 preset должен быть числом от 0 до 13")
+        else:
+            preset = config.get("preset", "medium")
+        crf = config.get("crf")
+        duration = config.get("duration")
         return TestConfig(
-            qp=config["qp"],
+            qp=config.get("qp", 0),
             scale=config.get("scale", "original"),
             fps=config.get("fps"),
             hw=config.get("hw", 0),
-            codec=config.get("codec", "x265"),
-            preset=preset
+            codec=codec,
+            preset=preset,
+            crf=crf,
+            duration=duration
         )
 
     def _get_scale_filter(self, scale: str, width: int, height: int) -> str:
@@ -129,6 +149,10 @@ class FFmpegQPTest:
         # Добавляем входной файл
         cmd.extend(["-i", input_file])
         
+        # duration
+        if config.duration:
+            cmd.extend(["-t", str(config.duration)])
+        
         if config.hw == 1:
             # Добавляем фильтры масштабирования и FPS
             filters = []
@@ -148,19 +172,25 @@ class FFmpegQPTest:
                 cmd.extend([
                     "-c:v", "hevc_vaapi",
                     "-qp", str(config.qp),
-                    "-preset", config.preset
+                    "-preset", str(config.preset)
                 ])
             elif config.codec == "x264":
                 cmd.extend([
                     "-c:v", "h264_vaapi",
                     "-qp", str(config.qp),
-                    "-preset", config.preset
+                    "-preset", str(config.preset)
+                ])
+            elif config.codec == "av1":
+                cmd.extend([
+                    "-c:v", "av1_vaapi",
+                    "-qp", str(config.qp),
+                    "-preset", str(config.preset)
                 ])
             else:
                 cmd.extend([
                     "-c:v", f"{config.codec}_vaapi",
                     "-qp", str(config.qp),
-                    "-preset", config.preset
+                    "-preset", str(config.preset)
                 ])
             
             # Копируем аудио поток без перекодирования
@@ -169,10 +199,31 @@ class FFmpegQPTest:
             # Программное кодирование
             if config.codec == "x265":
                 cmd.extend(["-c:v", "libx265"])
+                if config.crf is not None:
+                    cmd.extend(["-crf", str(config.crf)])
+                else:
+                    cmd.extend(["-qp", str(config.qp)])
+                cmd.extend(["-preset", str(config.preset)])
+            elif config.codec == "x264":
+                cmd.extend(["-c:v", "libx264"])
+                if config.crf is not None:
+                    cmd.extend(["-crf", str(config.crf)])
+                else:
+                    cmd.extend(["-qp", str(config.qp)])
+                cmd.extend(["-preset", str(config.preset)])
             elif config.codec == "av1":
                 cmd.extend(["-c:v", "libsvtav1"])
+                if config.crf is not None:
+                    cmd.extend(["-crf", str(config.crf)])
+                else:
+                    cmd.extend(["-qp", str(config.qp)])
+                cmd.extend(["-preset", str(config.preset)])
             else:
-                cmd.extend(["-c:v", config.codec])
+                cmd.extend([
+                    "-c:v", config.codec,
+                    "-qp", str(config.qp),
+                    "-preset", str(config.preset)
+                ])
             
             # Добавляем фильтры для программного кодирования
             filters = []
@@ -186,8 +237,6 @@ class FFmpegQPTest:
             
             # Добавляем параметры качества
             cmd.extend([
-                "-qp", str(config.qp),
-                "-preset", config.preset,
                 "-c:a", "copy"
             ])
         
@@ -289,7 +338,13 @@ class FFmpegQPTest:
             self.print_input_info(input_file)
 
         test_config = self._validate_config(config)
-        output_file = f"output_{test_config.qp}_{test_config.codec}_{test_config.scale}.mp4"
+        # Формируем имя файла с учетом qp, crf, preset, codec, scale
+        qp_part = f"qp{test_config.qp}" if test_config.qp else ""
+        crf_part = f"crf{test_config.crf}" if test_config.crf is not None else ""
+        preset_part = f"preset{test_config.preset}" if test_config.preset is not None else ""
+        parts = [qp_part, crf_part, preset_part, test_config.codec, test_config.scale]
+        name = "_".join([p for p in parts if p])
+        output_file = f"output_{name}.mp4"
         
         # Получаем длительность входного видео
         duration = self._get_duration(input_file)
@@ -311,6 +366,8 @@ class FFmpegQPTest:
         # Собираем весь вывод FFmpeg
         ffmpeg_output = []
         while True:
+            if process.stderr is None:
+                break
             output = process.stderr.readline()
             if output == '' and process.poll() is not None:
                 break
@@ -364,8 +421,10 @@ class FFmpegQPTest:
         """Выводит таблицу результатов"""
         # Определяем ширину колонок
         col_widths = {
-            'file': 30,    # Имя файла
+            'file': 40,    # Имя файла (увеличено для длинных имён)
             'qp': 4,       # QP
+            'crf': 5,      # CRF
+            'preset': 8,   # Preset
             'scale': 8,    # Scale
             'fps': 5,      # FPS
             'codec': 10,   # Кодек
@@ -380,6 +439,8 @@ class FFmpegQPTest:
         header = (
             f"{'Файл':<{col_widths['file']}} "
             f"{'QP':<{col_widths['qp']}} "
+            f"{'CRF':<{col_widths['crf']}} "
+            f"{'Preset':<{col_widths['preset']}} "
             f"{'Scale':<{col_widths['scale']}} "
             f"{'FPS':<{col_widths['fps']}} "
             f"{'Кодек':<{col_widths['codec']}} "
@@ -414,10 +475,16 @@ class FFmpegQPTest:
             # Форматируем время кодирования
             time_str = f"{result.encoding_time:.1f}с"
             
+            # CRF и PRESET
+            crf_str = str(result.config.crf) if result.config.crf is not None else "-"
+            preset_str = str(result.config.preset) if result.config.preset is not None else "-"
+            
             # Формируем строку результата
             row = (
                 f"{os.path.basename(result.output_file):<{col_widths['file']}} "
                 f"{result.config.qp:<{col_widths['qp']}} "
+                f"{crf_str:<{col_widths['crf']}} "
+                f"{preset_str:<{col_widths['preset']}} "
                 f"{result.config.scale:<{col_widths['scale']}} "
                 f"{fps_str:<{col_widths['fps']}} "
                 f"{result.config.codec:<{col_widths['codec']}} "
@@ -443,17 +510,24 @@ def main():
    python ffmpeg_qp_test.py -i input.mp4 -tests '[{"qp":35,"scale":"1080p","fps":30,"hw":1,"codec":"x265"}]'
 
 2. Несколько тестов с разными параметрами:
-   python ffmpeg_qp_test.py -i input.mp4 -tests '[{"qp":35,"scale":"1080p","fps":30,"hw":1},{"qp":28,"scale":"4k","fps":60,"hw":0,"codec":"av1"}]'
+   python ffmpeg_qp_test.py -i input.mp4 -tests '[{"qp":35,"scale":"1080p","fps":30,"hw":1},{"crf":28,"scale":"4k","fps":60,"hw":0,"codec":"av1","preset":5}]'
 
 3. Тест только с обязательными параметрами:
    python ffmpeg_qp_test.py -i input.mp4 -tests '[{"qp":35}]'
 
+4. Тест с ограничением времени:
+   python ffmpeg_qp_test.py -i input.mp4 -tests '[{"qp":35}]' -duration 10
+
 Подробное описание параметров:
 
-qp (обязательный):
+qp (обязательный для HW, опциональный для SW):
     - Целое число от 0 до 51
     - Чем меньше значение, тем выше качество и размер файла
     - Рекомендуемый диапазон: 18-35
+
+crf (только для программных кодеков):
+    - Целое число (например, 18-35 для x264/x265, 1+ для av1)
+    - Если указан, используется вместо qp
 
 scale:
     - "1080p" - масштабирование до 1080p
@@ -476,10 +550,8 @@ codec:
     - По умолчанию используется x265
 
 preset:
-    - "ultrafast" - самое быстрое кодирование, низкое качество
-    - "fast" - быстрое кодирование
-    - "medium" - сбалансированное кодирование
-    - "slow" - медленное кодирование, высокое качество
+    - Для x264/x265: "ultrafast", "fast", "medium", "slow"
+    - Для av1: число от 0 до 13 (по умолчанию 8)
 
 Возможные ошибки и их решения:
 
@@ -494,10 +566,14 @@ preset:
 
 4. "Входной файл не найден"
    Решение: Проверьте путь к файлу и права доступа
+
+-duration:
+    - Ограничить время теста (секунды), например 10 — только первые 10 секунд файла
 """
     )
     parser.add_argument("-i", "--input", required=True, help="Путь к исходному видеофайлу")
     parser.add_argument("-tests", required=True, help="JSON-массив конфигураций кодирования")
+    parser.add_argument("-duration", type=int, default=None, help="Ограничить время теста (секунды), например 10 — только первые 10 секунд файла")
     
     # Устанавливаем ширину консоли для лучшего форматирования
     try:
@@ -518,6 +594,9 @@ preset:
         tester = FFmpegQPTest()
         for i, test_config in enumerate(tests, 1):
             print(f"\nТест {i} из {len(tests)}")
+            # duration из CLI имеет приоритет, если задан
+            if args.duration is not None:
+                test_config["duration"] = args.duration
             result = tester.run_test(args.input, test_config)
             tester.results.append(result)
         
